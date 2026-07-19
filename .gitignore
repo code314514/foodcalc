@@ -1,0 +1,29 @@
+# Build artifacts
+.buildozer/
+bin/
+*.apk
+*.aab
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Screenshots
+screenshots/
+exports/
+
+# Temp files
+*.log

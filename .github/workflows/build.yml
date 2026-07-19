@@ -1,0 +1,57 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          sudo apt update
+          sudo apt install -y python3-pip python3-dev build-essential git autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev openjdk-17-jdk zip unzip
+          pip3 install --user buildozer cython
+
+      - name: Build APK (first pass - downloads p4a)
+        run: |
+          export PATH=$PATH:~/.local/bin
+          buildozer android debug || true
+
+      - name: Fix numpy recipe (v-prefix git tags)
+        run: |
+          NR=~/.buildozer/android/platform/python-for-android/pythonforandroid/recipes/numpy/__init__.py
+          if [ -f "$NR" ]; then
+            python3 -c "
+  p='$NR'
+  with open(p) as f: c = f.read()
+  if 'def __init__' not in c:
+      init = \"\"\"
+      def __init__(self, *args, **kwargs):
+          super().__init__(*args, **kwargs)
+          if not self.version.startswith('v'):
+              self.version = 'v' + self.version
+  \"\"\"
+      c = c.replace('min_ndk_api_support = 24', 'min_ndk_api_support = 24' + init[:])
+      with open(p, 'w') as f: f.write(c)
+      print('Numpy recipe patched')
+  else:
+      print('Numpy recipe already patched')
+  "
+          fi
+
+      - name: Build APK (final)
+        run: |
+          export PATH=$PATH:~/.local/bin
+          buildozer android debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: foodcalc-apk
+          path: bin/*.apk
