@@ -17,22 +17,29 @@ jobs:
           sudo apt install -y python3-pip python3-dev build-essential git autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev openjdk-17-jdk zip unzip
           pip3 install --user buildozer cython
 
-      - name: Build APK (init p4a)
-        continue-on-error: true
+      - name: Build APK
         run: |
           export PATH=$HOME/.local/bin:$PATH
-          buildozer android debug
-
-      - name: Fix numpy recipe
-        run: python3 fix_numpy.py
-
-      - name: Build APK (final)
-        run: |
-          export PATH=$HOME/.local/bin:$PATH
+          # First pass: download all deps, will fail at numpy git tag
+          buildozer android debug 2>&1 | tee build.log || true
+          # Fix numpy recipe v-prefix issue
+          python3 fix_numpy.py
+          # Clean failed numpy build but keep everything else
+          rm -rf .buildozer/android/platform/build-arm64-v8a/build/other_builds/numpy 2>/dev/null
+          rm -rf .buildozer/android/platform/build-arm64-v8a/build/other_builds/hostpython3 2>/dev/null
+          # Final build
           buildozer android debug
 
       - name: Upload APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: foodcalc-apk
           path: bin/*.apk
+
+      - name: Upload build log (for debugging)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
