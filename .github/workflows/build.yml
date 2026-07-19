@@ -14,32 +14,58 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt update
-          sudo apt install -y python3-pip python3-dev build-essential git autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev openjdk-17-jdk zip unzip
+          sudo apt install -y python3-pip python3-dev build-essential git autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev openjdk-17-jdk zip unzip
           pip3 install --user buildozer cython
+
+      - name: Initialize p4a (clone only)
+        run: |
+          export PATH=$HOME/.local/bin:$PATH
+          # Run buildozer to trigger p4a clone, ignore failure
+          buildozer android debug || true
+
+      - name: Fix p4a numpy version bug
+        run: |
+          # Find and patch recipe.py to handle v-prefix git tags
+          RECIPE=$(find . -path "*/recipe.py" -name "recipe.py" | head -1)
+          if [ -z "$RECIPE" ]; then
+            RECIPE=$(find /home/runner -path "*/recipe.py" -name "recipe.py" 2>/dev/null | head -1)
+          fi
+          echo "Recipe found: $RECIPE"
+          if [ -f "$RECIPE" ]; then
+            python3 -c "
+  p = '$RECIPE'
+  with open(p) as f: c = f.read()
+  # Change git checkout to try v-prefix first, fall back to original
+  old = \"shprint(sh.git, 'checkout', self.version)\"
+  new = '''# Try v-prefix tag first (numpy uses v1.22.4 not 1.22.4)
+          vtag = 'v' + self.version
+          import sh as _sh
+          try:
+              shprint(sh.git, 'checkout', vtag)
+          except _sh.ErrorReturnCode:
+              shprint(sh.git, 'checkout', self.version)'''
+  if old in c:
+      c = c.replace(old, new)
+      with open(p, 'w') as f: f.write(c)
+      print('PATCHED recipe.py')
+  else:
+      print('Already patched or not found')
+  "
+          fi
+
+      - name: Clean numpy build cache
+        run: |
+          rm -rf .buildozer/android/platform/build-arm64-v8a/build/other_builds/numpy 2>/dev/null || true
+          rm -rf .buildozer/android/platform/build-arm64-v8a/build/other_builds/hostpython3 2>/dev/null || true
 
       - name: Build APK
         run: |
           export PATH=$HOME/.local/bin:$PATH
-          # First pass: download all deps, will fail at numpy git tag
-          buildozer android debug 2>&1 | tee build.log || true
-          # Fix numpy recipe v-prefix issue
-          python3 fix_numpy.py
-          # Clean failed numpy build but keep everything else
-          rm -rf .buildozer/android/platform/build-arm64-v8a/build/other_builds/numpy 2>/dev/null
-          rm -rf .buildozer/android/platform/build-arm64-v8a/build/other_builds/hostpython3 2>/dev/null
-          # Final build
           buildozer android debug
 
       - name: Upload APK
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: foodcalc-apk
           path: bin/*.apk
-
-      - name: Upload build log (for debugging)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: build.log
