@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -14,40 +14,21 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt update
-          sudo apt install -y python3-pip python3-dev build-essential git autoconf libtool pkg-config \
-            zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev openjdk-17-jdk zip unzip
+          sudo apt install -y python3-pip python3-dev build-essential git autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev openjdk-17-jdk zip unzip
           pip3 install --user buildozer cython
 
-      - name: Build APK (first pass - downloads p4a)
+      - name: Build APK (init p4a)
+        continue-on-error: true
         run: |
-          export PATH=$PATH:~/.local/bin
-          buildozer android debug || true
+          export PATH=$HOME/.local/bin:$PATH
+          buildozer android debug
 
-      - name: Fix numpy recipe (v-prefix git tags)
-        run: |
-          NR=~/.buildozer/android/platform/python-for-android/pythonforandroid/recipes/numpy/__init__.py
-          if [ -f "$NR" ]; then
-            python3 -c "
-  p='$NR'
-  with open(p) as f: c = f.read()
-  if 'def __init__' not in c:
-      init = \"\"\"
-      def __init__(self, *args, **kwargs):
-          super().__init__(*args, **kwargs)
-          if not self.version.startswith('v'):
-              self.version = 'v' + self.version
-  \"\"\"
-      c = c.replace('min_ndk_api_support = 24', 'min_ndk_api_support = 24' + init[:])
-      with open(p, 'w') as f: f.write(c)
-      print('Numpy recipe patched')
-  else:
-      print('Numpy recipe already patched')
-  "
-          fi
+      - name: Fix numpy recipe
+        run: python3 fix_numpy.py
 
       - name: Build APK (final)
         run: |
-          export PATH=$PATH:~/.local/bin
+          export PATH=$HOME/.local/bin:$PATH
           buildozer android debug
 
       - name: Upload APK
